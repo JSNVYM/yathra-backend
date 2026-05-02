@@ -1,0 +1,404 @@
+<!-- ===== TRAVEL PARTNER POPUP =====
+     REPLACE EVERYTHING from line 3875 (<!-- ===== TRAVEL PARTNER POPUP ===== -->)
+     to the closing </script> tag on line 4161 with this block.
+     Also replace the popup HTML from line 4282 to line 4371.
+     ===== -->
+
+<!-- ── Travel Partner: Secure WebSocket + REST client ── -->
+<script>
+(function () {
+  'use strict';
+
+  // ══════════════════════════════════════════════════
+  //  CONFIG — Replace with your deployed backend URL
+  // ══════════════════════════════════════════════════
+  const API_BASE = 'https://YOUR_BACKEND_URL';   // e.g. https://api.yathramap.com
+  const WS_BASE  = 'wss://YOUR_BACKEND_URL/ws';  // same host, wss protocol
+
+  // ── Session UID (persisted across page loads) ────
+  // A random ID per browser session — no personal data stored
+  let _uid = sessionStorage.getItem('yathra_uid');
+  if (!_uid) {
+    _uid = 'u-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9);
+    sessionStorage.setItem('yathra_uid', _uid);
+  }
+  let _myName = localStorage.getItem('yathra_name') || '';
+
+  // ── State ───────────────────────────────────────
+  let _tpMode   = 'partner'; // 'partner' | 'meetup'
+  let _tpAction = 'join';
+  let _activeChatId   = null;
+  let _activeChatName = '';
+
+  // ── WebSocket state ─────────────────────────────
+  let _ws        = null;
+  let _wsRoom    = null;
+  let _wsRetries = 0;
+  const WS_MAX_RETRIES = 5;
+
+  // ── Helpers ──────────────────────────────────────
+  function show(id) { const el = document.getElementById(id); if (el) el.style.display = 'flex'; }
+  function hide(id) { const el = document.getElementById(id); if (el) el.style.display = 'none'; }
+  function escHtml(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function formatTime(tsVal) {
+    try {
+      const d = tsVal instanceof Date ? tsVal : new Date(tsVal);
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch { return ''; }
+  }
+
+  // ── Close everything ─────────────────────────────
+  function closeAll() {
+    ['tpMainPopup','tpSubPopup','tpActionPopup','tpChatPopup'].forEach(hide);
+    document.body.style.overflow = '';
+    disconnectWS();
+    _activeChatId = null;
+  }
+
+  // ── Expose to global (onclick= attributes) ──────
+  window.openTravelPartnerPopup = function () {
+    show('tpMainPopup');
+    document.body.style.overflow = 'hidden';
+  };
+  window.closeTravelPartnerPopup = closeAll;
+
+  window.openTpSub = function (mode) {
+    _tpMode = mode;
+    const isP = mode === 'partner';
+    document.getElementById('tpSubTitle').textContent = isP ? 'Find Travel Partner' : 'Strangers Meetup';
+    document.getElementById('tpSubDesc').textContent  = isP ? 'Match with fellow travellers' : 'Join or create group meetups';
+    hide('tpMainPopup'); show('tpSubPopup');
+  };
+  window.closeTpSub = function () { hide('tpSubPopup'); show('tpMainPopup'); };
+
+  window.openTpAction = function (action) {
+    _tpAction = action;
+    const isP = _tpMode === 'partner', isJ = action === 'join';
+    document.getElementById('tpActionTitle').textContent = isJ
+      ? (isP ? 'Find a Travel Partner' : 'Join a Meetup')
+      : (isP ? 'Post Your Trip'        : 'Create a Meetup');
+    document.getElementById('tpActionDesc').textContent = isJ
+      ? 'Browse available listings' : 'Fill in the details below';
+    hide('tpSubPopup'); show('tpActionPopup');
+    renderTpActionBody();
+  };
+  window.closeTpAction = function () { hide('tpActionPopup'); show('tpSubPopup'); };
+
+  // ── RENDER action body ───────────────────────────
+  async function renderTpActionBody() {
+    const body = document.getElementById('tpActionBody');
+    const isP  = _tpMode === 'partner', isJ = _tpAction === 'join';
+
+    if (isJ) {
+      body.innerHTML = '<div class="tp-loading"><div class="tp-spinner"></div><p>Loading...</p></div>';
+      try {
+        const endpoint = isP ? `${API_BASE}/api/listings/partners` : `${API_BASE}/api/listings/meetups`;
+        const res  = await fetch(endpoint, { method: 'GET', headers: { 'Accept': 'application/json' } });
+        if (!res.ok) throw new Error('Server error');
+        const json = await res.json();
+
+        if (!json.ok || !json.data || json.data.length === 0) {
+          body.innerHTML = '<div class="tp-empty">😶 No listings yet.<br>Be the first to post!</div>';
+          return;
+        }
+
+        let html = '<div class="tp-results">';
+        json.data.forEach(d => {
+          const id = d._id;
+          if (isP) {
+            html += `<div class="tp-result-card">
+              <div class="tp-result-avatar">${escHtml(d.emoji || '🧭')}</div>
+              <div class="tp-result-info">
+                <div class="tp-result-name">${escHtml(d.name)}</div>
+                <div class="tp-result-meta">${escHtml(d.from)} → ${escHtml(d.dest)} &nbsp;·&nbsp; ${escHtml(d.date)} &nbsp;·&nbsp; ${d.seats} seat${d.seats > 1 ? 's' : ''}</div>
+              </div>
+              <button class="tp-result-btn" onclick="openTpChat('${escHtml(id)}','${escHtml(d.name)}')">Chat</button>
+            </div>`;
+          } else {
+            html += `<div class="tp-result-card">
+              <div class="tp-result-avatar">${escHtml(d.emoji || '🎯')}</div>
+              <div class="tp-result-info">
+                <div class="tp-result-name">${escHtml(d.mname || d.name)}</div>
+                <div class="tp-result-meta">${escHtml(d.place)} &nbsp;·&nbsp; ${escHtml(d.date)} &nbsp;·&nbsp; ${d.members || 1}/${d.max} joined</div>
+              </div>
+              <button class="tp-result-btn blue" onclick="openTpChat('${escHtml(id)}','${escHtml(d.mname || d.name)}')">Join Chat</button>
+            </div>`;
+          }
+        });
+        html += '</div>';
+        body.innerHTML = html;
+      } catch (e) {
+        console.error(e);
+        body.innerHTML = '<div class="tp-empty">⚠️ Could not load listings.<br>Check your connection.</div>';
+      }
+    } else {
+      // ── CREATE FORM ───────────────────────────────
+      if (isP) {
+        body.innerHTML = `<div class="tp-form" id="tpCreateForm">
+          <div class="tp-form-2col">
+            <div class="tp-form-row"><label class="tp-form-label">Your Name</label><input class="tp-form-input" id="tpf_name" placeholder="e.g. Arjun M." maxlength="60"></div>
+            <div class="tp-form-row"><label class="tp-form-label">WhatsApp</label><input class="tp-form-input" id="tpf_phone" type="tel" placeholder="+91 XXXXX XXXXX"></div>
+          </div>
+          <div class="tp-form-2col">
+            <div class="tp-form-row"><label class="tp-form-label">From</label><input class="tp-form-input" id="tpf_from" placeholder="Starting city"></div>
+            <div class="tp-form-row"><label class="tp-form-label">Destination</label><input class="tp-form-input" id="tpf_dest" placeholder="e.g. Munnar"></div>
+          </div>
+          <div class="tp-form-2col">
+            <div class="tp-form-row"><label class="tp-form-label">Travel Date</label><input class="tp-form-input" id="tpf_date" type="date"></div>
+            <div class="tp-form-row"><label class="tp-form-label">Seats Available</label><input class="tp-form-input" id="tpf_seats" type="number" min="1" max="20" placeholder="2"></div>
+          </div>
+          <div class="tp-form-row"><label class="tp-form-label">About Your Trip</label><textarea class="tp-form-textarea" id="tpf_desc" placeholder="Brief description, preferences..." maxlength="400"></textarea></div>
+          <div id="tpFormErr" style="color:#e53935;font-size:11px;display:none;margin-top:4px;"></div>
+          <button class="tp-submit-btn" onclick="tpSubmitCreate()">Post Trip 🚀</button>
+        </div>`;
+      } else {
+        body.innerHTML = `<div class="tp-form" id="tpCreateForm">
+          <div class="tp-form-2col">
+            <div class="tp-form-row"><label class="tp-form-label">Your Name</label><input class="tp-form-input" id="tpf_name" placeholder="e.g. Priya S." maxlength="60"></div>
+            <div class="tp-form-row"><label class="tp-form-label">WhatsApp</label><input class="tp-form-input" id="tpf_phone" type="tel" placeholder="+91 XXXXX XXXXX"></div>
+          </div>
+          <div class="tp-form-row"><label class="tp-form-label">Meetup Name</label><input class="tp-form-input" id="tpf_mname" placeholder="e.g. Kerala Hikers Group" maxlength="80"></div>
+          <div class="tp-form-2col">
+            <div class="tp-form-row"><label class="tp-form-label">Location</label><input class="tp-form-input" id="tpf_place" placeholder="e.g. Chembra Peak"></div>
+            <div class="tp-form-row"><label class="tp-form-label">Date</label><input class="tp-form-input" id="tpf_date" type="date"></div>
+          </div>
+          <div class="tp-form-2col">
+            <div class="tp-form-row"><label class="tp-form-label">Max Members</label><input class="tp-form-input" id="tpf_max" type="number" min="2" max="100" placeholder="10"></div>
+            <div class="tp-form-row"><label class="tp-form-label">Type</label>
+              <select class="tp-form-select" id="tpf_type"><option>Trekking</option><option>Beach Trip</option><option>Heritage Tour</option><option>Backwater</option><option>Wildlife</option><option>General</option></select>
+            </div>
+          </div>
+          <div class="tp-form-row"><label class="tp-form-label">Description</label><textarea class="tp-form-textarea" id="tpf_desc" placeholder="What's the plan?" maxlength="400"></textarea></div>
+          <div id="tpFormErr" style="color:#e53935;font-size:11px;display:none;margin-top:4px;"></div>
+          <button class="tp-submit-btn blue" onclick="tpSubmitCreate()">Create Meetup 🎯</button>
+        </div>`;
+      }
+    }
+  }
+
+  // ── SUBMIT create ────────────────────────────────
+  window.tpSubmitCreate = async function () {
+    const isP = _tpMode === 'partner';
+    const err = document.getElementById('tpFormErr');
+    err.style.display = 'none';
+
+    const g = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+
+    let payload = { uid: _uid };
+    if (isP) {
+      Object.assign(payload, { name: g('tpf_name'), phone: g('tpf_phone'), from: g('tpf_from'), dest: g('tpf_dest'), date: g('tpf_date'), seats: g('tpf_seats'), desc: g('tpf_desc') });
+    } else {
+      Object.assign(payload, { name: g('tpf_name'), phone: g('tpf_phone'), mname: g('tpf_mname'), place: g('tpf_place'), date: g('tpf_date'), max: g('tpf_max'), type: g('tpf_type'), desc: g('tpf_desc') });
+    }
+
+    const btn = document.querySelector('.tp-submit-btn');
+    if (btn) { btn.textContent = 'Saving...'; btn.disabled = true; }
+
+    try {
+      const endpoint = isP ? `${API_BASE}/api/listings/partners` : `${API_BASE}/api/listings/meetups`;
+      const res  = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const json = await res.json();
+
+      if (!json.ok) {
+        const msg = json.errors ? json.errors.join(', ') : json.error || 'Failed to save.';
+        err.textContent = msg; err.style.display = 'block';
+        if (btn) { btn.textContent = isP ? 'Post Trip 🚀' : 'Create Meetup 🎯'; btn.disabled = false; }
+        return;
+      }
+
+      const newId   = json.id;
+      const newName = payload.name || payload.mname || 'My Listing';
+
+      const body = document.getElementById('tpActionBody');
+      body.innerHTML = `<div class="tp-success">
+        <div class="tp-success-emoji">${isP ? '🤝' : '🎉'}</div>
+        <h4>${isP ? 'Trip Posted!' : 'Meetup Created!'}</h4>
+        <p>${isP ? 'Your trip is live. Others can find and chat with you.' : 'Your meetup is live! Others can now join.'}</p>
+        <button class="tp-result-btn" style="width:100%;margin-top:6px;" onclick="openTpChat('${escHtml(newId)}','${escHtml(newName)}')">Open Group Chat 💬</button>
+        <button class="tp-done-btn" onclick="closeTravelPartnerPopup()">Done</button>
+      </div>`;
+    } catch (e) {
+      console.error(e);
+      if (btn) { btn.textContent = isP ? 'Post Trip 🚀' : 'Create Meetup 🎯'; btn.disabled = false; }
+      err.textContent = 'Connection failed. Please check your internet and try again.';
+      err.style.display = 'block';
+    }
+  };
+
+  // ── OPEN CHAT ─────────────────────────────────────
+  window.openTpChat = function (chatId, chatName) {
+    _activeChatId   = chatId;
+    _activeChatName = chatName;
+    document.getElementById('tpChatTitle').textContent = chatName;
+    hide('tpActionPopup'); hide('tpSubPopup'); hide('tpMainPopup');
+    show('tpChatPopup');
+    loadChat(chatId);
+  };
+  window.closeTpChat = function () {
+    disconnectWS();
+    _activeChatId = null;
+    hide('tpChatPopup');
+    show('tpActionPopup');
+  };
+
+  // ── Load chat history via REST, then connect WebSocket ──
+  async function loadChat(chatId) {
+    const box = document.getElementById('tpChatMessages');
+    box.innerHTML = '<div class="tp-loading"><div class="tp-spinner"></div></div>';
+
+    // Ask name once
+    if (!_myName) {
+      _myName = prompt('Your name in chat:', 'Traveller') || 'Traveller';
+      localStorage.setItem('yathra_name', _myName);
+    }
+
+    // 1) Fetch history
+    try {
+      const res  = await fetch(`${API_BASE}/api/chat/${chatId}/messages`, { headers: { 'Accept': 'application/json' } });
+      const json = await res.json();
+      if (json.ok && Array.isArray(json.data)) {
+        renderMessages(json.data, box);
+      } else {
+        box.innerHTML = '<div class="tp-chat-empty">👋 Say hello! Be the first to chat.</div>';
+      }
+    } catch {
+      box.innerHTML = '<div class="tp-chat-empty">⚠️ Could not load messages.</div>';
+    }
+
+    // 2) Connect WebSocket for real-time
+    connectWS(chatId, box);
+
+    // 3) Wire input
+    wireInput();
+  }
+
+  function renderMessages(msgs, box) {
+    if (!msgs.length) { box.innerHTML = '<div class="tp-chat-empty">👋 Say hello! Be the first to chat.</div>'; return; }
+    box.innerHTML = '';
+    msgs.forEach(msg => appendMessage(msg, box));
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function appendMessage(msg, box) {
+    const isMine = msg.uid === _uid || msg.mine;
+    const div = document.createElement('div');
+    div.className = 'tp-msg ' + (isMine ? 'tp-msg-mine' : 'tp-msg-other');
+    div.innerHTML = `${!isMine ? `<div class="tp-msg-sender">${escHtml(msg.sender)}</div>` : ''}
+      <div class="tp-msg-bubble">${escHtml(msg.text)}</div>
+      <div class="tp-msg-time">${formatTime(msg.ts)}</div>`;
+    // Remove placeholder
+    const empty = box.querySelector('.tp-chat-empty, .tp-loading');
+    if (empty) empty.remove();
+    box.appendChild(div);
+    box.scrollTop = box.scrollHeight;
+  }
+
+  // ── WebSocket connection ──────────────────────────
+  function connectWS(roomId, box) {
+    disconnectWS();
+    _wsRoom    = roomId;
+    _wsRetries = 0;
+
+    function tryConnect() {
+      try {
+        _ws = new WebSocket(WS_BASE);
+
+        _ws.onopen = () => {
+          _wsRetries = 0;
+          _ws.send(JSON.stringify({ type: 'join', roomId, uid: _uid }));
+        };
+
+        _ws.onmessage = (event) => {
+          let msg;
+          try { msg = JSON.parse(event.data); } catch { return; }
+
+          if (msg.type === 'message' && msg.roomId === _wsRoom) {
+            // Skip echo of own messages if already rendered (mine flag)
+            if (msg.mine) return; // own echo already shown by optimistic render
+            const currentBox = document.getElementById('tpChatMessages');
+            if (currentBox) appendMessage(msg, currentBox);
+          }
+          if (msg.type === 'error') {
+            console.warn('[WS error msg]', msg.error);
+          }
+        };
+
+        _ws.onclose = (evt) => {
+          if (evt.code === 4003) return; // forbidden, don't retry
+          if (_wsRoom && _wsRetries < WS_MAX_RETRIES) {
+            const delay = Math.min(1000 * Math.pow(2, _wsRetries), 16000);
+            _wsRetries++;
+            setTimeout(tryConnect, delay);
+          }
+        };
+
+        _ws.onerror = (e) => { console.error('[WS]', e); };
+
+      } catch (e) {
+        console.error('[WS connect]', e);
+      }
+    }
+
+    tryConnect();
+  }
+
+  function disconnectWS() {
+    _wsRoom = null;
+    if (_ws) {
+      try { _ws.close(); } catch {}
+      _ws = null;
+    }
+  }
+
+  // ── Wire input send button ───────────────────────
+  function wireInput() {
+    const input   = document.getElementById('tpChatInput');
+    const sendBtn = document.getElementById('tpChatSend');
+    if (!input || !sendBtn) return;
+
+    // Clone to remove old listeners
+    const ni = input.cloneNode(true);
+    const nb = sendBtn.cloneNode(true);
+    input.parentNode.replaceChild(ni, input);
+    sendBtn.parentNode.replaceChild(nb, sendBtn);
+
+    async function sendMsg() {
+      const text = ni.value.trim();
+      if (!text || !_activeChatId) return;
+      if (text.length > 500) return;
+
+      ni.value = '';
+      ni.focus();
+
+      // Optimistic UI: show immediately
+      const optimistic = { text, sender: _myName, uid: _uid, ts: new Date(), mine: true };
+      const box = document.getElementById('tpChatMessages');
+      if (box) appendMessage(optimistic, box);
+
+      // Send via WebSocket if open, else REST fallback (not needed — WS handles it)
+      if (_ws && _ws.readyState === WebSocket.OPEN) {
+        _ws.send(JSON.stringify({ type: 'message', text, sender: _myName, uid: _uid }));
+      } else {
+        // WebSocket not ready — show warning
+        const box2 = document.getElementById('tpChatMessages');
+        if (box2) {
+          const warn = document.createElement('div');
+          warn.style.cssText = 'text-align:center;font-size:10px;color:#e53935;padding:4px;';
+          warn.textContent = '⚠️ Connection lost. Reconnecting...';
+          box2.appendChild(warn);
+        }
+      }
+    }
+
+    nb.addEventListener('click', sendMsg);
+    ni.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); } });
+  }
+
+})();
+</script>
