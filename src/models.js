@@ -1,8 +1,8 @@
-// models/index.js — Mongoose schemas
+// models/index.js â€” Mongoose schemas
 'use strict';
 const mongoose = require('mongoose');
 
-// ── Trip Partner (Find Travel Partner) ──────────────────────────
+// â”€â”€ Trip Partner (Find Travel Partner) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const TripPartnerSchema = new mongoose.Schema({
   name:      { type: String, required: true, maxlength: 60, trim: true },
   phone:     { type: String, default: '', maxlength: 20, trim: true },
@@ -10,13 +10,17 @@ const TripPartnerSchema = new mongoose.Schema({
   dest:      { type: String, required: true, maxlength: 80, trim: true },
   date:      { type: String, required: true, maxlength: 20, trim: true },
   seats:     { type: Number, required: true, min: 1, max: 20 },
+  mode:      { type: String, default: 'Any', maxlength: 20, trim: true },
+  budget:    { type: String, default: '', maxlength: 20, trim: true },
+  gender:    { type: String, default: 'Any', maxlength: 10, trim: true },
+  age:       { type: String, default: '', maxlength: 20, trim: true },
   desc:      { type: String, default: '', maxlength: 400, trim: true },
-  emoji:     { type: String, default: '🧭', maxlength: 8 },
+  emoji:     { type: String, default: 'ðŸ§­', maxlength: 8 },
   uid:       { type: String, required: true, maxlength: 128 },
   createdAt: { type: Date, default: Date.now, index: true }
 }, { versionKey: false });
 
-// ── Meetup ───────────────────────────────────────────────────────
+// â”€â”€ Meetup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const MeetupSchema = new mongoose.Schema({
   name:    { type: String, required: true, maxlength: 60, trim: true },
   mname:   { type: String, required: true, maxlength: 80, trim: true },
@@ -26,12 +30,12 @@ const MeetupSchema = new mongoose.Schema({
   members: { type: Number, default: 1, min: 1 },
   type:    { type: String, default: 'General', maxlength: 40 },
   desc:    { type: String, default: '', maxlength: 400, trim: true },
-  emoji:   { type: String, default: '🎯', maxlength: 8 },
+  emoji:   { type: String, default: 'ðŸŽ¯', maxlength: 8 },
   uid:     { type: String, required: true, maxlength: 128 },
   createdAt: { type: Date, default: Date.now, index: true }
 }, { versionKey: false });
 
-// ── Chat Message ─────────────────────────────────────────────────
+// â”€â”€ Chat Message â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const ChatMessageSchema = new mongoose.Schema({
   roomId: { type: String, required: true, maxlength: 128, index: true },
   text:   { type: String, required: true, maxlength: 500, trim: true },
@@ -43,7 +47,7 @@ const ChatMessageSchema = new mongoose.Schema({
 // Compound index so room queries are fast
 ChatMessageSchema.index({ roomId: 1, ts: 1 });
 
-// ── Room metadata (tracks active members, name, type) ───────────
+// â”€â”€ Room metadata (tracks active members, name, type) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const RoomSchema = new mongoose.Schema({
   _id:      { type: String },          // same as tripPartner/meetup _id
   name:     { type: String, maxlength: 80, trim: true },
