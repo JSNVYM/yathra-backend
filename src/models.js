@@ -22,16 +22,21 @@ const TripPartnerSchema = new mongoose.Schema({
 
 // ── Meetup ───────────────────────────────────────────────────────
 const MeetupSchema = new mongoose.Schema({
-  name:    { type: String, required: true, maxlength: 60, trim: true },
-  mname:   { type: String, required: true, maxlength: 80, trim: true },
-  place:   { type: String, required: true, maxlength: 80, trim: true },
-  date:    { type: String, required: true, maxlength: 20, trim: true },
-  max:     { type: Number, required: true, min: 2, max: 100 },
-  members: { type: Number, default: 1, min: 1 },
-  type:    { type: String, default: 'General', maxlength: 40 },
-  desc:    { type: String, default: '', maxlength: 400, trim: true },
-  emoji:   { type: String, default: '🎯', maxlength: 8 },
-  uid:     { type: String, required: true, maxlength: 128 },
+  name:      { type: String, required: true, maxlength: 60,  trim: true },
+  phone:     { type: String, default: '',    maxlength: 20,  trim: true },
+  mname:     { type: String, required: true, maxlength: 80,  trim: true },
+  place:     { type: String, required: true, maxlength: 80,  trim: true },
+  date:      { type: String, required: true, maxlength: 20,  trim: true },
+  max:       { type: Number, required: true, min: 2, max: 100 },
+  members:   { type: Number, default: 1, min: 1 },
+  type:      { type: String, default: 'General', maxlength: 40 },
+  meetpoint: { type: String, default: '', maxlength: 120, trim: true },
+  cost:      { type: String, default: '', maxlength: 20,  trim: true },
+  agegroup:  { type: String, default: '', maxlength: 20,  trim: true },
+  lang:      { type: String, default: '', maxlength: 30,  trim: true },
+  desc:      { type: String, default: '', maxlength: 400, trim: true },
+  emoji:     { type: String, default: '🎯', maxlength: 8 },
+  uid:       { type: String, required: true, maxlength: 128 },
   createdAt: { type: Date, default: Date.now, index: true }
 }, { versionKey: false });
 
