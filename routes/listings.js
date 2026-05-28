@@ -48,7 +48,23 @@ router.post('/meetups', createLimiter, async (req, res) => {
   const { uid } = req.body;
   if (!validateUID(uid)) return res.status(400).json({ ok: false, errors: ['Invalid session UID.'] });
   try {
-    const doc = await Meetup.create({ name: req.body.name, mname: req.body.mname, place: req.body.place, date: req.body.date, max: parseInt(req.body.max), members: 1, type: req.body.type||'General', desc: req.body.desc||'', emoji: '🎯', uid });
+    const doc = await Meetup.create({
+      name:      req.body.name,
+      phone:     req.body.phone     || '',
+      mname:     req.body.mname,
+      place:     req.body.place,
+      date:      req.body.date,
+      max:       parseInt(req.body.max),
+      members:   1,
+      type:      req.body.type      || 'General',
+      meetpoint: req.body.meetpoint || '',
+      cost:      req.body.cost      || '',
+      agegroup:  req.body.agegroup  || '',
+      lang:      req.body.lang      || '',
+      desc:      req.body.desc      || '',
+      emoji:     '🎯',
+      uid
+    });
     await Room.findByIdAndUpdate(doc._id.toString(), { _id: doc._id.toString(), name: doc.mname, type: 'meetup' }, { upsert: true });
     return res.status(201).json({ ok: true, id: doc._id.toString() });
   } catch (e) { console.error('[POST /meetups]', e.message); return res.status(500).json({ ok: false, error: 'Failed to create meetup.' }); }
