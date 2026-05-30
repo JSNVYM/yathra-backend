@@ -39,7 +39,7 @@ function validateTripPartner(body) {
   if (!body.date  || !validator.isDate(body.date, { format: 'YYYY-MM-DD', strictMode: true })) errors.push('Valid travel date required (YYYY-MM-DD)');
   const seats = parseInt(body.seats);
   if (isNaN(seats) || seats < 1 || seats > 20) errors.push('Seats must be 1–20');
-  if (body.phone && !/^\+?[\d\s\-]{7,20}$/.test(body.phone)) errors.push('Invalid phone number');
+  if (body.phone && body.phone.length > 0 && !/^\+?[\d\s\-]{7,20}$/.test(body.phone)) errors.push('Invalid phone number');
   if (body.desc  && body.desc.length  > 400) errors.push('Description max 400 chars');
   return errors;
 }
@@ -52,8 +52,12 @@ function validateMeetup(body) {
   if (!body.date  || !validator.isDate(body.date, { format: 'YYYY-MM-DD', strictMode: true })) errors.push('Valid date required (YYYY-MM-DD)');
   const max = parseInt(body.max);
   if (isNaN(max) || max < 2 || max > 100) errors.push('Max members must be 2–100');
-  if (body.phone && !/^\+?[\d\s\-]{7,20}$/.test(body.phone)) errors.push('Invalid phone number');
-  if (body.desc  && body.desc.length  > 400) errors.push('Description max 400 chars');
+  if (body.phone && body.phone.length > 0 && !/^\+?[\d\s\-]{7,20}$/.test(body.phone)) errors.push('Invalid phone number');
+  if (body.desc      && body.desc.length      > 400) errors.push('Description max 400 chars');
+  if (body.meetpoint && body.meetpoint.length  > 120) errors.push('Meeting point max 120 chars');
+  if (body.cost      && body.cost.length       > 20)  errors.push('Cost max 20 chars');
+  if (body.agegroup  && body.agegroup.length   > 20)  errors.push('Age group max 20 chars');
+  if (body.lang      && body.lang.length       > 30)  errors.push('Language max 30 chars');
   return errors;
 }
 
