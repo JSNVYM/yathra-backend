@@ -17,6 +17,7 @@ const xss            = require('xss');
 
 const listingsRouter = require('./routes/listings');
 const chatRouter     = require('./routes/chat');
+const uploadRouter   = require('./routes/upload');
 const { ChatMessage, Room } = require('./src/models');
 const { sanitizeInputs, validateChatMessage, validateUID } = require('./middleware/sanitize');
 
@@ -81,6 +82,7 @@ app.use('/api', globalLimiter);
 // ── Routes ───────────────────────────────────────────────────────
 app.use('/api/listings', listingsRouter);
 app.use('/api/chat',     chatRouter);
+app.use('/api/upload',   uploadRouter);
 
 // Health check
 app.get('/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
