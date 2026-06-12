@@ -39,7 +39,6 @@ app.use(helmet({
 // ── CORS ─────────────────────────────────────────────────────────
 const corsOptions = {
   origin: (origin, cb) => {
-    // Allow requests with no origin (e.g. mobile apps, curl) only in dev
     if (!origin) {
       return process.env.NODE_ENV === 'production'
         ? cb(new Error('No origin header — blocked'))
@@ -49,7 +48,7 @@ const corsOptions = {
     return cb(new Error(`CORS: origin '${origin}' not allowed`));
   },
   methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type'],
+  allowedHeaders: ['Content-Type', 'Accept'],
   credentials: false,
   optionsSuccessStatus: 200
 };
@@ -86,6 +85,14 @@ app.use('/api/upload',   uploadRouter);
 
 // Health check
 app.get('/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
+
+// Upload config check — confirms env vars are set (never exposes values)
+app.get('/api/upload/check', (_req, res) => res.json({
+  ok: true,
+  sheetConfigured:  !!process.env.GOOGLE_SHEET_ID,
+  driveConfigured:  !!process.env.GOOGLE_DRIVE_FOLDER_ID,
+  keyConfigured:    !!process.env.GOOGLE_SERVICE_ACCOUNT_KEY
+}));
 
 // ── 404 handler ──────────────────────────────────────────────────
 app.use((_req, res) => res.status(404).json({ ok: false, error: 'Not found.' }));
