@@ -3,7 +3,6 @@
 const express      = require('express');
 const rateLimit    = require('express-rate-limit');
 const xss          = require('xss');
-const { google }   = require('googleapis');
 const { Readable } = require('stream');
 
 const router = express.Router();
@@ -21,15 +20,39 @@ const uploadLimiter = rateLimit({
 // Render stores env vars as strings — the private_key \n must be
 // converted back to real newlines before JSON.parse
 function getAuth() {
+  // Lazy-load so server never crashes on startup if package missing
+  const { google } = require('googleapis');
   let key;
   try {
-    // Fix escaped newlines that Render may add
-    const raw = (process.env.GOOGLE_SERVICE_ACCOUNT_KEY || '')
-      .replace(/\\n/g, '\n');
-    key = JSON.parse(raw);
+    let raw = process.env.GOOGLE_SERVICE_ACCOUNT_KEY || '';
+
+    // Strategy 1: try parsing as-is first
+    try {
+      key = JSON.parse(raw);
+    } catch (e1) {
+      // Strategy 2: fix real newlines inside the private_key value
+      // Replace actual newlines that appear inside JSON string values
+      raw = raw.replace(/\n/g, '\\n').replace(/\r/g, '');
+      try {
+        key = JSON.parse(raw);
+      } catch (e2) {
+        // Strategy 3: extract and fix just the private_key field
+        raw = (process.env.GOOGLE_SERVICE_ACCOUNT_KEY || '')
+          .replace(/"private_key"\s*:\s*"([\s\S]*?)(?<!\\)"/g, (match, pk) => {
+            return '"private_key":"' + pk.replace(/\n/g, '\\n').replace(/\r/g, '') + '"';
+          });
+        key = JSON.parse(raw);
+      }
+    }
   } catch (e) {
-    throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY is invalid JSON: ' + e.message);
+    throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY parse failed: ' + e.message);
   }
+
+  // Ensure private_key newlines are real \n characters (not escaped)
+  if (key.private_key) {
+    key.private_key = key.private_key.replace(/\\n/g, '\n');
+  }
+
   return new google.auth.GoogleAuth({
     credentials: key,
     scopes: [
@@ -89,6 +112,7 @@ router.post('/submit', uploadLimiter, async (req, res) => {
     }
 
     // ── Initialise Google clients ────────────────────────────────
+    const { google } = require('googleapis');
     const auth   = getAuth();
     const drive  = google.drive({ version: 'v3', auth });
     const sheets = google.sheets({ version: 'v4', auth });
