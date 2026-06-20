@@ -39,6 +39,17 @@ const app = express();
 // Trust proxy (needed if behind Nginx / Render / Railway etc.)
 app.set('trust proxy', 1);
 
+// ── Pre-CORS endpoints (accessible directly from browser) ────────
+app.get('/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
+
+app.get('/api/upload/check', (_req, res) => res.json({
+  ok: true,
+  routerLoaded:    !!uploadRouter,
+  sheetConfigured: !!process.env.GOOGLE_SHEET_ID,
+  driveConfigured: !!process.env.GOOGLE_DRIVE_FOLDER_ID,
+  keyConfigured:   !!process.env.GOOGLE_SERVICE_ACCOUNT_KEY
+}));
+
 // ── Security headers ─────────────────────────────────────────────
 app.use(helmet({
   contentSecurityPolicy: false   // CSP is handled by the frontend HTML
@@ -47,11 +58,8 @@ app.use(helmet({
 // ── CORS ─────────────────────────────────────────────────────────
 const corsOptions = {
   origin: (origin, cb) => {
-    if (!origin) {
-      return process.env.NODE_ENV === 'production'
-        ? cb(new Error('No origin header — blocked'))
-        : cb(null, true);
-    }
+    // No origin = direct browser URL, curl, Render health checks — allow
+    if (!origin) return cb(null, true);
     if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
     return cb(new Error(`CORS: origin '${origin}' not allowed`));
   },
@@ -92,18 +100,6 @@ app.use('/api/chat',     chatRouter);
 if (uploadRouter) {
   app.use('/api/upload', uploadRouter);
 }
-
-// Health check
-app.get('/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
-
-// Upload config check — shows env var status and whether router loaded
-app.get('/api/upload/check', (_req, res) => res.json({
-  ok: true,
-  routerLoaded:     !!uploadRouter,
-  sheetConfigured:  !!process.env.GOOGLE_SHEET_ID,
-  driveConfigured:  !!process.env.GOOGLE_DRIVE_FOLDER_ID,
-  keyConfigured:    !!process.env.GOOGLE_SERVICE_ACCOUNT_KEY
-}));
 
 // ── 404 handler ──────────────────────────────────────────────────
 app.use((_req, res) => res.status(404).json({ ok: false, error: 'Not found.' }));
