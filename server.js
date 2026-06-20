@@ -44,10 +44,12 @@ app.get('/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
 
 app.get('/api/upload/check', (_req, res) => res.json({
   ok: true,
-  routerLoaded:    !!uploadRouter,
-  sheetConfigured: !!process.env.GOOGLE_SHEET_ID,
-  driveConfigured: !!process.env.GOOGLE_DRIVE_FOLDER_ID,
-  keyConfigured:   !!process.env.GOOGLE_SERVICE_ACCOUNT_KEY
+  routerLoaded:      !!uploadRouter,
+  sheetConfigured:   !!process.env.GOOGLE_SHEET_ID,
+  driveConfigured:   !!process.env.GOOGLE_DRIVE_FOLDER_ID,
+  emailConfigured:   !!process.env.GOOGLE_CLIENT_EMAIL,
+  privateKeySet:     !!process.env.GOOGLE_PRIVATE_KEY,
+  privateKeyValid:   (process.env.GOOGLE_PRIVATE_KEY||'').includes('BEGIN')
 }));
 
 // ── Security headers ─────────────────────────────────────────────
