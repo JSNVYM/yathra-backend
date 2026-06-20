@@ -17,7 +17,15 @@ const xss            = require('xss');
 
 const listingsRouter = require('./routes/listings');
 const chatRouter     = require('./routes/chat');
-const uploadRouter   = require('./routes/upload');
+
+// Load upload router safely — won't crash server if googleapis missing
+let uploadRouter = null;
+try {
+  uploadRouter = require('./routes/upload');
+  console.log('[Server] Upload router loaded ✅');
+} catch (e) {
+  console.error('[Server] Upload router failed to load:', e.message);
+}
 const { ChatMessage, Room } = require('./src/models');
 const { sanitizeInputs, validateChatMessage, validateUID } = require('./middleware/sanitize');
 
@@ -81,14 +89,17 @@ app.use('/api', globalLimiter);
 // ── Routes ───────────────────────────────────────────────────────
 app.use('/api/listings', listingsRouter);
 app.use('/api/chat',     chatRouter);
-app.use('/api/upload',   uploadRouter);
+if (uploadRouter) {
+  app.use('/api/upload', uploadRouter);
+}
 
 // Health check
 app.get('/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
 
-// Upload config check — confirms env vars are set (never exposes values)
+// Upload config check — shows env var status and whether router loaded
 app.get('/api/upload/check', (_req, res) => res.json({
   ok: true,
+  routerLoaded:     !!uploadRouter,
   sheetConfigured:  !!process.env.GOOGLE_SHEET_ID,
   driveConfigured:  !!process.env.GOOGLE_DRIVE_FOLDER_ID,
   keyConfigured:    !!process.env.GOOGLE_SERVICE_ACCOUNT_KEY
