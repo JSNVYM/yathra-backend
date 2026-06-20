@@ -74,6 +74,7 @@ router.post('/submit', uploadLimiter, async (req, res) => {
     // ── Forward to Apps Script ───────────────────────────────────
     const payload = {
       sheetId, folderId,
+      secret:   process.env.UPLOAD_SECRET || '',
       category, name,
       business: business || category,
       location, maplink: maplink || '',
