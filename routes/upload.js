@@ -1,13 +1,13 @@
-// routes/upload.js — Secure listing submission to Google Sheets + Drive
+// routes/upload.js — Secure listing submission via Apps Script proxy
+// No googleapis needed — avoids Render free tier egress restrictions
 'use strict';
-const express      = require('express');
-const rateLimit    = require('express-rate-limit');
-const xss          = require('xss');
-const { Readable } = require('stream');
+const express  = require('express');
+const rateLimit = require('express-rate-limit');
+const xss      = require('xss');
 
 const router = express.Router();
 
-// ── Rate limiter ─────────────────────────────────────────────────
+// ── Rate limiter: max 5 per IP per hour ──────────────────────────
 const uploadLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 5,
@@ -15,68 +15,6 @@ const uploadLimiter = rateLimit({
   legacyHeaders: false,
   message: { ok: false, error: 'Too many submissions. Please try again in an hour.' }
 });
-
-// ── Cached auth client — reuse across requests to avoid repeated token fetches ──
-let _cachedAuth = null;
-
-function getAuth() {
-  const { google } = require('googleapis');
-
-  if (_cachedAuth) return _cachedAuth;
-
-  const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
-  const projectId   = process.env.GOOGLE_PROJECT_ID;
-
-  // Handle both escaped \n (from Render) and real newlines
-  let privateKey = process.env.GOOGLE_PRIVATE_KEY || '';
-  if (!privateKey.includes('\n')) {
-    privateKey = privateKey.replace(/\\n/g, '\n');
-  }
-
-  if (!clientEmail || !privateKey) {
-    throw new Error('Missing GOOGLE_CLIENT_EMAIL or GOOGLE_PRIVATE_KEY');
-  }
-
-  _cachedAuth = new google.auth.GoogleAuth({
-    credentials: {
-      type:         'service_account',
-      project_id:   projectId   || '',
-      client_email: clientEmail,
-      private_key:  privateKey
-    },
-    scopes: [
-      'https://www.googleapis.com/auth/spreadsheets',
-      'https://www.googleapis.com/auth/drive.file'
-    ]
-  });
-
-  return _cachedAuth;
-}
-
-// ── Retry helper — retries on network errors up to 3 times ───────
-async function withRetry(fn, retries = 3, delayMs = 1000) {
-  for (let i = 0; i < retries; i++) {
-    try {
-      return await fn();
-    } catch (e) {
-      const isNetworkErr = e.message && (
-        e.message.includes('Premature close') ||
-        e.message.includes('ECONNRESET') ||
-        e.message.includes('ETIMEDOUT') ||
-        e.message.includes('fetch failed') ||
-        e.message.includes('network')
-      );
-      if (isNetworkErr && i < retries - 1) {
-        console.warn(`[upload] Network error, retry ${i + 1}/${retries - 1}: ${e.message}`);
-        // Reset cached auth on network error so token is refreshed
-        _cachedAuth = null;
-        await new Promise(r => setTimeout(r, delayMs * (i + 1)));
-      } else {
-        throw e;
-      }
-    }
-  }
-}
 
 // ── Sanitize helper ──────────────────────────────────────────────
 function clean(val, max) {
@@ -102,17 +40,17 @@ router.post('/submit', uploadLimiter, async (req, res) => {
     // ── Validate ─────────────────────────────────────────────────
     const errors = [];
     if (!category)                                           errors.push('Category is required.');
-    if (!name || name.length < 2)                            errors.push('Name is required (min 2 chars).');
+    if (!name || name.length < 2)                            errors.push('Name is required.');
     if (!location || location.length < 2)                    errors.push('Location is required.');
-    if (!phone || !/^\+?[\d\s\-]{7,20}$/.test(phone))       errors.push('Valid WhatsApp number is required.');
-    if (!desc || desc.length < 10)                           errors.push('Description is required (min 10 chars).');
+    if (!phone || !/^\+?[\d\s\-]{7,20}$/.test(phone))       errors.push('Valid WhatsApp number required.');
+    if (!desc || desc.length < 10)                           errors.push('Description required (min 10 chars).');
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push('Invalid email format.');
     if (maplink && !maplink.startsWith('https://'))          errors.push('Map link must start with https://');
     if (errors.length) return res.status(400).json({ ok: false, errors });
 
     // ── Validate images ──────────────────────────────────────────
     const rawImages = Array.isArray(body.images) ? body.images.slice(0, 3) : [];
-    const ALLOWED   = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic'];
+    const ALLOWED   = ['image/jpeg','image/jpg','image/png','image/webp','image/heic'];
     const MAX_BYTES = 5 * 1024 * 1024;
 
     for (const img of rawImages) {
@@ -123,60 +61,41 @@ router.post('/submit', uploadLimiter, async (req, res) => {
         return res.status(400).json({ ok: false, error: 'Each image must be under 5MB.' });
     }
 
-    // ── Google clients ───────────────────────────────────────────
-    const { google } = require('googleapis');
-    const auth   = getAuth();
-    const drive  = google.drive({ version: 'v3', auth });
-    const sheets = google.sheets({ version: 'v4', auth });
-    const imgLinks = [];
+    // ── Check env vars ───────────────────────────────────────────
+    const scriptUrl = process.env.APPS_SCRIPT_URL;
+    const sheetId   = process.env.GOOGLE_SHEET_ID;
+    const folderId  = process.env.GOOGLE_DRIVE_FOLDER_ID;
 
-    // ── Upload images to Drive (with retry) ──────────────────────
-    for (let i = 0; i < rawImages.length; i++) {
-      const img = rawImages[i];
-      if (!img || !img.data) continue;
-
-      const buf     = Buffer.from(img.data, 'base64');
-      const ext     = (img.ext && /^[a-z0-9]{2,5}$/.test(img.ext)) ? img.ext : 'jpg';
-      const safeName = `${name}_${category}_${Date.now()}_${i + 1}.${ext}`
-        .replace(/[^a-zA-Z0-9._\-]/g, '_');
-
-      const created = await withRetry(() => drive.files.create({
-        requestBody: {
-          name: safeName,
-          parents: [process.env.GOOGLE_DRIVE_FOLDER_ID]
-        },
-        media: { mimeType: img.type, body: Readable.from(buf) },
-        fields: 'id,webViewLink'
-      }));
-
-      await withRetry(() => drive.permissions.create({
-        fileId: created.data.id,
-        requestBody: { role: 'reader', type: 'anyone' }
-      }));
-
-      imgLinks.push(created.data.webViewLink || '');
+    if (!scriptUrl || !sheetId || !folderId) {
+      console.error('[upload] Missing env vars: APPS_SCRIPT_URL, GOOGLE_SHEET_ID, or GOOGLE_DRIVE_FOLDER_ID');
+      return res.status(500).json({ ok: false, error: 'Server configuration error.' });
     }
 
-    // ── Append to Google Sheet (with retry) ──────────────────────
-    await withRetry(() => sheets.spreadsheets.values.append({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: 'Sheet1!A:J',
-      valueInputOption: 'RAW',
-      requestBody: {
-        values: [[
-          new Date().toISOString(),
-          category,
-          name,
-          business || category,
-          location,
-          maplink  || '',
-          phone,
-          email    || '',
-          desc,
-          imgLinks.join('\n')
-        ]]
-      }
-    }));
+    // ── Forward to Apps Script ───────────────────────────────────
+    const payload = {
+      sheetId, folderId,
+      category, name,
+      business: business || category,
+      location, maplink: maplink || '',
+      phone, email: email || '',
+      desc,
+      images: rawImages,
+      ts: new Date().toISOString()
+    };
+
+    const scriptRes = await fetch(scriptUrl, {
+      method:  'POST',
+      headers: { 'Content-Type': 'text/plain' }, // text/plain avoids CORS preflight on Apps Script
+      body:    JSON.stringify(payload),
+      signal:  AbortSignal.timeout(30000) // 30 second timeout
+    });
+
+    const result = await scriptRes.json();
+
+    if (!result.ok) {
+      console.error('[upload] Apps Script error:', result.error);
+      return res.status(500).json({ ok: false, error: 'Submission failed. Please try again.' });
+    }
 
     console.log(`[upload/submit] ✅ ${category} — ${name} (${location})`);
     return res.status(201).json({ ok: true });
