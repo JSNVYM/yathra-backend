@@ -47,9 +47,7 @@ app.get('/api/upload/check', (_req, res) => res.json({
   routerLoaded:      !!uploadRouter,
   sheetConfigured:   !!process.env.GOOGLE_SHEET_ID,
   driveConfigured:   !!process.env.GOOGLE_DRIVE_FOLDER_ID,
-  emailConfigured:   !!process.env.GOOGLE_CLIENT_EMAIL,
-  privateKeySet:     !!process.env.GOOGLE_PRIVATE_KEY,
-  privateKeyValid:   (process.env.GOOGLE_PRIVATE_KEY||'').includes('BEGIN')
+  scriptConfigured:  !!process.env.APPS_SCRIPT_URL
 }));
 
 // ── Security headers ─────────────────────────────────────────────
