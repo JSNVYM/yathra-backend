@@ -22,39 +22,22 @@ const uploadLimiter = rateLimit({
 function getAuth() {
   // Lazy-load so server never crashes on startup if package missing
   const { google } = require('googleapis');
-  let key;
-  try {
-    let raw = process.env.GOOGLE_SERVICE_ACCOUNT_KEY || '';
 
-    // Strategy 1: try parsing as-is first
-    try {
-      key = JSON.parse(raw);
-    } catch (e1) {
-      // Strategy 2: fix real newlines inside the private_key value
-      // Replace actual newlines that appear inside JSON string values
-      raw = raw.replace(/\n/g, '\\n').replace(/\r/g, '');
-      try {
-        key = JSON.parse(raw);
-      } catch (e2) {
-        // Strategy 3: extract and fix just the private_key field
-        raw = (process.env.GOOGLE_SERVICE_ACCOUNT_KEY || '')
-          .replace(/"private_key"\s*:\s*"([\s\S]*?)(?<!\\)"/g, (match, pk) => {
-            return '"private_key":"' + pk.replace(/\n/g, '\\n').replace(/\r/g, '') + '"';
-          });
-        key = JSON.parse(raw);
-      }
-    }
-  } catch (e) {
-    throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY parse failed: ' + e.message);
-  }
+  const clientEmail  = process.env.GOOGLE_CLIENT_EMAIL;
+  const privateKey   = (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+  const projectId    = process.env.GOOGLE_PROJECT_ID;
 
-  // Ensure private_key newlines are real \n characters (not escaped)
-  if (key.private_key) {
-    key.private_key = key.private_key.replace(/\\n/g, '\n');
+  if (!clientEmail || !privateKey) {
+    throw new Error('Missing GOOGLE_CLIENT_EMAIL or GOOGLE_PRIVATE_KEY env vars');
   }
 
   return new google.auth.GoogleAuth({
-    credentials: key,
+    credentials: {
+      type:         'service_account',
+      project_id:   projectId,
+      client_email: clientEmail,
+      private_key:  privateKey
+    },
     scopes: [
       'https://www.googleapis.com/auth/spreadsheets',
       'https://www.googleapis.com/auth/drive.file'
