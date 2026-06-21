@@ -28,15 +28,53 @@ router.post('/submit', uploadLimiter, async (req, res) => {
     const body = req.body || {};
 
     // ── Sanitize ─────────────────────────────────────────────────
-    const category = clean(body.category, 40);
-    const name     = clean(body.name,     60);
-    const business = clean(body.business, 80);
-    const location = clean(body.location, 80);
-    const maplink  = clean(body.maplink,  500);
-    const phone    = clean(body.phone,    20);
-    const email    = clean(body.email,    80);
-    const desc     = clean(body.desc,     400);
-    const extra    = clean(body.extra,    1000);
+    const category   = clean(body.category,   40);
+    const name       = clean(body.name,       60);
+    const business   = clean(body.business,   80);
+    const location   = clean(body.location,   80);
+    const maplink    = clean(body.maplink,    500);
+    const phone      = clean(body.phone,      20);
+    const email      = clean(body.email,      80);
+    const desc       = clean(body.desc,       400);
+    const district   = clean(body.district,   40);
+    const placeType  = clean(body.placeType,  40);
+    const entryFee   = clean(body.entryFee,   40);
+    const timing     = clean(body.timing,     80);
+    const stayType   = clean(body.stayType,   40);
+    const rate       = clean(body.rate,       80);
+    const rooms      = clean(body.rooms,      20);
+    const amenities  = clean(body.amenities,  120);
+    const boatType   = clean(body.boatType,   40);
+    const capacity   = clean(body.capacity,   20);
+    const campType   = clean(body.campType,   40);
+    const activities = clean(body.activities, 120);
+    const lang       = clean(body.lang,       80);
+    const guideType  = clean(body.guideType,  40);
+    const exp        = clean(body.exp,        20);
+    const cert       = clean(body.cert,       120);
+    const photoType  = clean(body.photoType,  40);
+    const portfolio  = clean(body.portfolio,  200);
+    const equipment  = clean(body.equipment,  120);
+    const deposit    = clean(body.deposit,    40);
+    const editType   = clean(body.editType,   40);
+    const software   = clean(body.software,   80);
+    const vehicle    = clean(body.vehicle,    40);
+    const minFare    = clean(body.minFare,    40);
+    const license    = clean(body.license,    60);
+    const busType    = clean(body.busType,    40);
+    const bikeType   = clean(body.bikeType,   80);
+    const cars       = clean(body.cars,       80);
+    const fuelPolicy = clean(body.fuelPolicy, 40);
+    const heliType   = clean(body.heliType,   40);
+    const route      = clean(body.route,      80);
+    const parkType   = clean(body.parkType,   40);
+    const vehicles   = clean(body.vehicles,   80);
+    const serviceType= clean(body.serviceType,40);
+    const cuisine    = clean(body.cuisine,    40);
+    const foodType   = clean(body.foodType,   40);
+    const avgCost    = clean(body.avgCost,    40);
+    const cafeType   = clean(body.cafeType,   40);
+    const speciality = clean(body.speciality, 120);
 
     // ── Validate ─────────────────────────────────────────────────
     const errors = [];
@@ -75,12 +113,22 @@ router.post('/submit', uploadLimiter, async (req, res) => {
     // ── Forward to Apps Script ───────────────────────────────────
     const payload = {
       sheetId, folderId,
-      secret:   process.env.UPLOAD_SECRET || '',
-      category, name,
-      business: business || category,
-      location, maplink: maplink || '',
-      phone, email: email || '',
-      desc, extra: extra || '',
+      secret:      process.env.UPLOAD_SECRET || '',
+      category,    name,
+      business:    business    || category,
+      location,    maplink:    maplink    || '',
+      phone,       email:      email      || '',
+      desc,
+      district,    placeType,  entryFee,   timing,
+      stayType,    rate,       rooms,      amenities,
+      boatType,    capacity,   campType,   activities,
+      lang,        guideType,  exp,        cert,
+      photoType,   portfolio,  equipment,  deposit,
+      editType,    software,   vehicle,    minFare,
+      license,     busType,    bikeType,   cars,
+      fuelPolicy,  heliType,   route,      parkType,
+      vehicles,    serviceType,cuisine,    foodType,
+      avgCost,     cafeType,   speciality,
       images: rawImages,
       ts: new Date().toISOString()
     };
