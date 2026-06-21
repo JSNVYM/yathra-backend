@@ -36,6 +36,7 @@ router.post('/submit', uploadLimiter, async (req, res) => {
     const phone    = clean(body.phone,    20);
     const email    = clean(body.email,    80);
     const desc     = clean(body.desc,     400);
+    const extra    = clean(body.extra,    1000);
 
     // ── Validate ─────────────────────────────────────────────────
     const errors = [];
@@ -79,7 +80,7 @@ router.post('/submit', uploadLimiter, async (req, res) => {
       business: business || category,
       location, maplink: maplink || '',
       phone, email: email || '',
-      desc,
+      desc, extra: extra || '',
       images: rawImages,
       ts: new Date().toISOString()
     };
